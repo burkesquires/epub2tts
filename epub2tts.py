@@ -55,17 +55,13 @@ To specify which chapter to end on (ex 20): --end 20
 """
 
 def chap2text(chap):
-    output = ''
     soup = BeautifulSoup(chap, 'html.parser')
     if "--skip-links" in sys.argv:
         # Remove everything that is an href
         for a in soup.findAll('a', href=True):
             a.extract()
     text = soup.find_all(string=True)
-    for t in text:
-        if t.parent.name not in blacklist:
-            output += '{} '.format(t)
-    return output
+    return ''.join(f'{t} ' for t in text if t.parent.name not in blacklist)
 
 
 def get_wav_duration(file_path):
@@ -86,20 +82,20 @@ def gen_ffmetadata(files):
             duration = get_wav_duration(file_name)
             file.write("[CHAPTER]\n")
             file.write("TIMEBASE=1/1000\n")
-            file.write("START=" + str(start_time) + "\n")
-            file.write("END=" + str(start_time + duration) + "\n")
-            file.write("title=Part " + str(chap) + "\n")
+            file.write(f"START={str(start_time)}" + "\n")
+            file.write(f"END={str(start_time + duration)}" + "\n")
+            file.write(f"title=Part {str(chap)}" + "\n")
             chap += 1
             start_time += duration
 
 def get_bookname():
     bookname = ''
-    for i, arg in enumerate(sys.argv):
+    for arg in sys.argv:
         if arg.endswith('.txt') or arg.endswith('.epub'):
             bookname = arg
     if ("--url" in sys.argv) and ("--name" in sys.argv):
         index = sys.argv.index("--name")
-        bookname = sys.argv[index + 1] + ".url"
+        bookname = f"{sys.argv[index + 1]}.url"
     if len(bookname) > 0:
         print(f"Book filename: {bookname}")
         return(bookname)
@@ -111,8 +107,7 @@ def get_bookname():
 
 def get_url():
     index = sys.argv.index("--url")
-    url = sys.argv[index + 1]
-    return(url)
+    return sys.argv[index + 1]
 
 def get_speaker():
     if "--speaker" in sys.argv:
@@ -124,11 +119,11 @@ def get_speaker():
     return(speaker_used)
 
 def get_chapters_epub(book, bookname):
-    chapters = []
-    for item in book.get_items():
-        if item.get_type() == ebooklib.ITEM_DOCUMENT:
-            chapters.append(item.get_content())
-
+    chapters = [
+        item.get_content()
+        for item in book.get_items()
+        if item.get_type() == ebooklib.ITEM_DOCUMENT
+    ]
     chapters_to_read = []
     for i in range(len(chapters)):
         #strip some characters that might have caused TTS to choke
@@ -137,12 +132,12 @@ def get_chapters_epub(book, bookname):
         if len(text) < 150:
             #too short to bother with
             continue
-        outputwav = str(i)+"-"+bookname.split(".")[0]+".wav"
-        print(outputwav + " Length: " + str(len(text)))
-        print("Part: " + str(len(chapters_to_read)+1))
+        outputwav = f"{str(i)}-" + bookname.split(".")[0] + ".wav"
+        print(f"{outputwav} Length: {len(text)}")
+        print(f"Part: {str(len(chapters_to_read) + 1)}")
         print(text[:256])
         chapters_to_read.append(text)  # append the last piece of text (shorter than max_len)
-    print("Number of chapters to read: " + str(len(chapters_to_read)))
+    print(f"Number of chapters to read: {len(chapters_to_read)}")
     if "--scan" in sys.argv:
         sys.exit()
     return(chapters_to_read)
@@ -153,7 +148,7 @@ def get_chapters_text(text):
     while len(text) > max_len:
         pos = text.rfind(' ', 0, max_len)  # find the last space within the limit
         chapters_to_read.append(text[:pos])
-        print("Part: " + str(len(chapters_to_read)))
+        print(f"Part: {len(chapters_to_read)}")
         print(str(chapters_to_read[-1])[:256])
         text = text[pos+1:]  # +1 to avoid starting the next chapter with a space
     chapters_to_read.append(text)
@@ -171,26 +166,21 @@ def get_url_text(url):
     return(article.text)
 
 def get_length(start, end, chapters_to_read):
-    total_chars = 0
-    for i in range(start, end):
-        total_chars += len(chapters_to_read[i])
-    return(total_chars)
+    return sum(len(chapters_to_read[i]) for i in range(start, end))
 
 def get_start():
-# There are definitely better ways to handle arguments, this should be fixed
-    if "--start" in sys.argv:
-        start = int(sys.argv[sys.argv.index("--start") + 1]) - 1
-    else:
-        start = 0
-    return(start)
+    return (
+        int(sys.argv[sys.argv.index("--start") + 1]) - 1
+        if "--start" in sys.argv
+        else 0
+    )
 
 def get_end(chapters_to_read):
-# There are definitely better ways to handle arguments, this should be fixed
-    if "--end" in sys.argv:
-        end = int(sys.argv[sys.argv.index("--end") + 1])
-    else:
-        end = len(chapters_to_read)
-    return(end)
+    return (
+        int(sys.argv[sys.argv.index("--end") + 1])
+        if "--end" in sys.argv
+        else len(chapters_to_read)
+    )
 
 def main():
     bookname = get_bookname() #detect .txt, .epub or https
@@ -207,7 +197,7 @@ def main():
         print("Detected URL for file type, --scan, --start and --end will be ignored")
         url = get_url()
         text = get_url_text(url)
-        print("Name: " + bookname)
+        print(f"Name: {bookname}")
         print(text)
         while True:
             user_input = input("Look good, continue? (y/n): ")
@@ -228,9 +218,9 @@ def main():
     tts = TTS(model_name).to(device)
     for i in range(start, end):
         outputwav = bookname.split(".")[0]+"-"+str(i+1)+".wav"
-        print("Reading " + str(i))
+        print(f"Reading {str(i)}")
         if os.path.isfile(outputwav):
-            print(outputwav + " exists, skipping to next chapter")
+            print(f"{outputwav} exists, skipping to next chapter")
         else:
             tts.tts_to_file(text = chapters_to_read[i], speaker = speaker_used, file_path = outputwav)
         files.append(outputwav)
@@ -247,10 +237,6 @@ def main():
         if device == 'cuda':
             gc.collect()
             torch.cuda.empty_cache()
-        else:
-            pass
-
-
     #Load all WAV files and concatenate into one object
     wav_files = [AudioSegment.from_wav(f"{f}") for f in files]
     concatenated = sum(wav_files)
